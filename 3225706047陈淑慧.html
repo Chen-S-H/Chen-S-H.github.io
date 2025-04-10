@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实验六：WebGIS应用</title>
+
+
+    <!-- 加载ArcGIS Maps SDK for JavaScript的CSS和JS文件 -->
+    <link rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/light/main.css" />
+    <script>
+        // 设置区域为中文
+        var dojoConfig = {
+            locale: "zh-cn"
+        };
+    </script>
+    <script src="https://js.arcgis.com/4.32/"></script>
+
+    <style>
+        /* 基础样式：确保页面占满整个窗口 */
+        html, body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: "Arial", sans-serif;
+        }
+        
+        /* 页面容器：使用flex布局实现垂直方向的结构 */
+        .page-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        /* 1. 页眉区域样式 */
+        .header {
+            background-color: #2d67ae; 
+            color: white;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between; /* 标题和按钮分列两边 */
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* 添加阴影效果 */
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        
+        /* 页眉按钮容器 */
+        .header-buttons {
+            display: flex;
+            gap: 10px; /* 按钮之间的间距 */
+        }
+        
+        /* 页眉按钮样式 */
+        .header-button {
+            background-color: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 4px;
+            color: white;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background-color 0.3s; /* 平滑的悬停效果 */
+        }
+        
+        .header-button:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* 内容区域：使用flex实现地图和底图库的水平布局 */
+        .content {
+            display: flex;
+            flex: 1; /* 占据除页眉外的所有空间 */
+            overflow: hidden; /* 防止内容溢出 */
+        }
+        
+        /* 2. 地图区域样式 */
+        .map-container {
+            flex: 1; /* 占据主要空间 */
+            position: relative; /* 用于定位内部元素 */
+        }
+        
+        #viewDiv {
+            height: 100%; /* 地图容器占满整个父容器 */
+        }
+        
+        /* 3. 底图库区域样式 */
+        .basemap-gallery-container {
+            width: 300px; /* 固定宽度 */
+            background-color: #f8f8f8;
+            border-left: 1px solid #ddd;
+            padding: 15px;
+            overflow-y: auto; /* 内容过多时可滚动 */
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .basemap-gallery-container h2 {
+            margin-top: 0;
+            color: #323232;
+            font-size: 18px;
+        }
+        
+        /* 微件样式：地图上的控件 */
+        .widgets-container {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px; /* 微件之间的间距 */
+            z-index: 99; /* 确保微件显示在地图上方 */
+        }
+        
+        /* 单个微件容器样式 */
+        .widget-container {
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* 搜索微件样式 */
+        #searchWidget {
+            width: 300px;
+        }
+        
+        /* 图例和图层列表微件样式 */
+        #legendDiv, #layerListDiv {
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto; /* 内容过多时可滚动 */
+            width: 280px;
+        }
+        
+        /* 响应式设计：在小屏幕上调整布局 */
+        @media screen and (max-width: 768px) {
+            .content {
+                flex-direction: column; /* 小屏幕上垂直排列 */
+            }
+            
+            .basemap-gallery-container {
+                width: 100%;
+                height: 200px;
+                border-left: none;
+                border-top: 1px solid #ddd;
+            }
+        }
+    </style>
+    <script>
+        // 使用ArcGIS JavaScript API的require模式加载所需模块
+        require([
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/widgets/BasemapGallery", // 底图库组件
+            "esri/widgets/Expand",
+            "esri/widgets/Search",          // 搜索组件
+            "esri/widgets/Legend",          // 图例组件
+            "esri/widgets/LayerList",       // 图层列表组件
+            "esri/widgets/ScaleBar",        // 比例尺组件
+            "esri/layers/FeatureLayer"      // 要素图层
+        ], function(Map, MapView, BasemapGallery, Expand, Search, Legend, LayerList, ScaleBar, FeatureLayer) {
+            // 创建底图对象
+            const map1 = new Map({
+                basemap: "streets-vector" // 使用矢量街道底图
+            });
+
+            // 创建地图视图对象
+            const view = new MapView({
+                container: "viewDiv",     // 指定地图容器的ID
+                map: map1,                 // 设置使用的地图对象
+                center: [114.5, 37],      // 设置地图中心点的经纬度坐标（中国）
+                zoom: 3                   // 设置初始缩放级别
+            });
+
+            // 添加专题图层 - 2024年运营中民航机场
+            const airportLayer = new FeatureLayer({
+                url: "https://www.geosceneonline.cn/server/rest/services/Hosted/2024年运营中民航机场/FeatureServer/0",
+                outFields: ["*"],           // 输出所有字段
+                popupTemplate: {            // 点击要素时显示的弹出窗口模板
+                    title: "{mc}",          // 使用机场名称字段作为标题
+                    content: [
+                        {
+                            type: "fields", // 字段类型的内容
+                            fieldInfos: [   // 配置显示哪些字段
+                                {
+                                    fieldName: "xzqhdm",
+                                    label: "行政区划代码"
+                                },
+                                {
+                                    fieldName: "xzqhmc",
+                                    label: "行政区划名称"
+                                },
+                                {
+                                    fieldName: "lon",
+                                    label: "经度"
+                                },
+                                {
+                                    fieldName: "lat",
+                                    label: "纬度"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            });
+            // 将机场图层添加到地图中
+            map1.add(airportLayer);
+
+            // 创建底图库组件
+            const basemapGallery = new BasemapGallery({
+                view: view,                     // 关联到当前视图
+                container: "basemapGalleryDiv"  // 指定底图库的DOM容器
+            });
+
+            // 创建搜索框组件
+            const searchWidget = new Search({
+                view: view,
+                container: "searchWidget",
+                sources: [
+                    {
+                        layer: airportLayer,          // 设置搜索的图层
+                        searchFields: ["mc", "xzqhmc"], // 设置要搜索的字段
+                        displayField: "mc",            // 显示的字段
+                        exactMatch: false,             // 不要求完全匹配
+                        outFields: ["*"],              // 输出所有字段
+                        name: "中国机场",             // 搜索源名称
+                        placeholder: "输入机场名称或城市" // 搜索框占位文本
+                    }
+                ]
+            });
+
+            // 创建图例组件
+            const legend = new Legend({
+                view: view,
+                container: "legendDiv" // 指定图例的DOM容器
+            });
+
+            // 创建图层列表组件
+            const layerList = new LayerList({
+                view: view,
+                container: "layerListDiv" // 指定图层列表的DOM容器
+            });
+
+            // 创建比例尺组件
+            const scaleBar = new ScaleBar({
+                view: view,
+                unit: "metric", // 使用公制单位
+                style: "line"   // 线条样式的比例尺
+            });
+            
+            // 将比例尺添加到地图左下角
+            view.ui.add(scaleBar, {
+                position: "bottom-left"
+            });
+
+            // 添加帮助按钮事件处理
+            document.getElementById("help-button").addEventListener("click", function() {
+                alert("使用说明：\n1. 可以使用右上角搜索框搜索机场\n2. 点击机场点查看详细信息\n3. 使用右侧底图库切换不同底图\n4. 图层控制可以开启/关闭图层");
+            });
+
+            // 地图视图初始化完成时隐藏加载提示
+            view.when(() => {
+                document.getElementById("loading").style.display = "none";
+            });
+        });
+    </script>
+</head>
+<body>
+    <div class="page-container">
+        <!-- 1. 页眉区域 -->
+        <header class="header">
+            <h1>中国民航机场分布地图</h1>
+            <div class="header-buttons">
+                <button class="header-button" id="help-button">帮助</button>
+            </div>
+        </header>
+
+        <div class="content">
+            <!-- 2. 地图区域 -->
+            <div class="map-container">
+                <div id="viewDiv"></div>
+                
+                <!-- 加载提示：在地图加载时显示 -->
+                <div id="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.2);">
+                    <div>地图加载中...</div>
+                </div>
+                
+                <!-- 地图微件容器 -->
+                <div class="widgets-container">
+                    <div class="widget-container" id="searchWidget"></div>
+                    
+                    <div class="widget-container">
+                        <h3 style="margin: 10px;">图例</h3>
+                        <div id="legendDiv"></div>
+                    </div>
+                    
+                    <div class="widget-container">
+                        <h3 style="margin: 10px;">图层控制</h3>
+                        <div id="layerListDiv"></div>
+                    </div>
+                </div>
+            </div>
+            
+        
+            <div class="basemap-gallery-container">
+                <h2>底图库</h2>
+                <div id="basemapGalleryDiv"></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
